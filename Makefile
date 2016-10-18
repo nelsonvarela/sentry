@@ -9,14 +9,15 @@ install-python:
 	pip install ujson
 	pip install "file://`pwd`#egg=sentry[dev]"
 
-install-npm:
+install-yarn:
 	@echo "--> Installing Node dependencies"
-	npm install
+	@hash yarn 2> /dev/null || npm install yarn
+	yarn install
 
 install-python-tests:
 	pip install "file://`pwd`#egg=sentry[dev,tests,dsym]"
 
-develop-only: update-submodules install-python install-python-tests install-npm
+develop-only: update-submodules install-python install-python-tests install-yarn
 
 develop: update-submodules setup-git develop-only install-python-tests
 	@echo ""
@@ -170,8 +171,8 @@ travis-install-postgres: travis-install-python dev-postgres
 travis-install-mysql: travis-install-python
 	pip install mysqlclient
 	echo 'create database sentry;' | mysql -uroot
-travis-install-acceptance: install-npm travis-install-postgres
-travis-install-js: travis-upgrade-pip install-python install-python-tests install-npm
+travis-install-acceptance: install-yarn travis-install-postgres
+travis-install-js: travis-upgrade-pip install-python install-python-tests install-yarn
 travis-install-cli: travis-install-postgres
 travis-install-dist: travis-upgrade-pip install-python install-python-tests
 
