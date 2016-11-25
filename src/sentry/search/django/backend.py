@@ -72,13 +72,17 @@ class DjangoSearchBackend(SearchBackend):
                         last_seen_from=None, last_seen_from_inclusive=True,
                         last_seen_to=None, last_seen_to_inclusive=True,
                         date_from=None, date_from_inclusive=True,
-                        date_to=None, date_to_inclusive=True,
-                        cursor=None, limit=None):
+                        include_on_hold=False, date_to=None,
+                        date_to_inclusive=True, cursor=None, limit=None):
         from sentry.models import Event, Group, GroupSubscription, GroupStatus
 
         engine = get_db_engine('default')
 
         queryset = Group.objects.filter(project=project)
+
+        if not include_on_hold:
+            queryset = queryset.processed_only()
+
         if query:
             # TODO(dcramer): if we want to continue to support search on SQL
             # we should at least optimize this in Postgres so that it does
