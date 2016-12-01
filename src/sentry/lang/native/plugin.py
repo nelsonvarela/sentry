@@ -10,7 +10,7 @@ import posixpath
 from symsynd.demangle import demangle_symbol
 from sentry.models import Project, EventError
 from sentry.plugins import Plugin2
-from sentry.lang.native.symbolizer import Symbolizer
+from sentry.lang.native.symbolizer import Symbolizer, SymbolicationFailed
 from sentry.lang.native.utils import find_all_stacktraces, \
     find_apple_crash_report_referenced_images, get_sdk_from_event, \
     find_stacktrace_referenced_images, get_sdk_from_apple_system_info, \
@@ -363,12 +363,16 @@ def resolve_frame_symbols(data):
         errors.append({
             'type': EventError.NATIVE_INTERNAL_FAILURE,
             'frame': frame,
-            'error': 'frame #%d: %s: %s' % (
-                idx,
-                e.__class__.__name__,
-                six.text_type(e),
-            )
+            'error': u'frame #%d: %s' % (idx, e)
         })
+
+    def record_broken_symbolication(frame):
+        release = data.get('release')
+        if not release:
+            return
+        img = sym.get_app_image_for_frame(frame)
+        if img is None:
+            return
 
     with sym:
         for stacktrace, container in stacktraces:
@@ -381,13 +385,15 @@ def resolve_frame_symbols(data):
                    'symbol_addr' not in frame:
                     continue
                 try:
-                    sfrm = sym.symbolize_frame({
-                        'object_name': frame.get('package'),
-                        'object_addr': frame['image_addr'],
-                        'instruction_addr': frame['instruction_addr'],
-                        'symbol_addr': frame['symbol_addr'],
-                    }, sdk_info, report_error=report_error)
-                    if not sfrm:
+                    try:
+                        sfrm = sym.symbolize_frame({
+                            'object_name': frame.get('package'),
+                            'object_addr': frame['image_addr'],
+                            'instruction_addr': frame['instruction_addr'],
+                            'symbol_addr': frame['symbol_addr'],
+                        }, sdk_info)
+                    except SymbolicationFailed as e:
+                        report_error(e)
                         continue
                     new_frame = dict(frame)
                     # XXX: log here if symbol could not be found?
@@ -417,7 +423,7 @@ def resolve_frame_symbols(data):
                     new_frame['symbol_addr'] = '0x%x' % parse_addr(sfrm['symbol_addr'])
                     new_frame['instruction_addr'] = '0x%x' % parse_addr(
                         sfrm['instruction_addr'])
-                    new_frame['in_app'] = is_in_app(new_frame)
+                    new_frame['in_app'] = sym.is_app_frame(sfrm)
 
                     if new_frame != frame:
                         new_frames[idx] = new_frame
