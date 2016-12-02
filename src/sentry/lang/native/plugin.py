@@ -8,6 +8,7 @@ import logging
 import posixpath
 
 from symsynd.demangle import demangle_symbol
+
 from sentry.models import Project, EventError
 from sentry.plugins import Plugin2
 from sentry.lang.native.symbolizer import Symbolizer, SymbolicationFailed
@@ -16,6 +17,7 @@ from sentry.lang.native.utils import find_all_stacktraces, \
     find_stacktrace_referenced_images, get_sdk_from_apple_system_info, \
     APPLE_SDK_MAPPING
 from sentry.utils.native import parse_addr
+from sentry.reprocessing import record_processing_issue
 
 
 logger = logging.getLogger(__name__)
@@ -365,14 +367,14 @@ def resolve_frame_symbols(data):
             'frame': frame,
             'error': u'frame #%d: %s' % (idx, e)
         })
-
-    def record_broken_symbolication(frame):
-        release = data.get('release')
-        if not release:
+        if not e.is_fixable or not data.get('release'):
             return
-        img = sym.get_app_image_for_frame(frame)
-        if img is None:
-            return
+        record_processing_issue(data, 'native', 'dsym:%s' % e.image_uuid, data={
+            'image_uuid': e.image_uuid,
+            'image_path': e.image_path,
+            'type': e.type,
+            'message': e.message,
+        })
 
     with sym:
         for stacktrace, container in stacktraces:

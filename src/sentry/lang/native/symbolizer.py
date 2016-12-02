@@ -28,14 +28,13 @@ class SymbolicationFailed(Exception):
     message = None
 
     def __init__(self, message=None, type=None, image_uuid=None,
-                 image_path=None, symbolizer_error=None, is_fixable=True):
+                 image_path=None, is_fixable=False):
         Exception.__init__(self)
-        if symbolizer_error is not None:
-            type = 'symbolizer error'
-            message = six.text_type(symbolizer_error)
-            is_fixable = False
         self.message = six.text_type(message)
         self.type = type
+        if is_fixable and image_uuid is not None:
+            raise RuntimeError('Fixable symbolication failures require '
+                               'an image UUID')
         self.image_uuid = image_uuid
         self.image_path = image_path
         self.is_fixable = is_fixable
@@ -151,20 +150,26 @@ class Symbolizer(object):
     def symbolize_app_frame(self, frame, img):
         if frame['object_addr'] not in self.symsynd_symbolizer.images:
             raise SymbolicationFailed(
-                type='missing-symbol',
+                type='missing-dsym',
                 message=(
-                    'Frame references a missing debug symbol'
+                    'Frame references a missing dSYM file'
                 ),
                 image_uuid=img['uuid'],
                 image_path=self._get_real_package(frame),
-                is_fixable=False
+                is_fixable=True
             )
 
         try:
             new_frame = self.symsynd_symbolizer.symbolize_frame(
                 frame, silent=False, demangle=False)
         except SymbolicationError as e:
-            raise SymbolicationFailed(symbolizer_error=e)
+            raise SymbolicationFailed(
+                type='bad-dsym',
+                message='Symbolication failed due to bad dsym: %s' % e,
+                image_uuid=img['uuid'],
+                image_path=self._get_real_package(frame),
+                is_fixable=True
+            )
 
         if new_frame is None:
             raise SymbolicationFailed(
@@ -172,7 +177,8 @@ class Symbolizer(object):
                 message=(
                     'Upon symbolication a frame could not be resolved.'
                 ),
-                is_fixable=False
+                image_uuid=img['uuid'],
+                image_path=self._get_real_package(frame)
             )
 
         return self._process_frame(new_frame, img)
@@ -182,15 +188,14 @@ class Symbolizer(object):
         symbol = find_system_symbol(img, frame['instruction_addr'], sdk_info)
         if symbol is None:
             raise SymbolicationFailed(
-                type='missing-system-symbol',
+                type='missing-system-dsym',
                 message=(
                     'Attempted to look up system in the system symbols but '
                     'no symbol could be found.  This might happen with beta '
                     'releases of SDKs'
                 ),
                 image_uuid=img['uuid'],
-                image_path=self._get_real_package(frame),
-                is_fixable=False
+                image_path=self._get_real_package(frame)
             )
 
         rv = dict(frame, symbol_name=symbol, filename=None,
@@ -226,11 +231,7 @@ class Symbolizer(object):
             errors.append({
                 'type': EventError.NATIVE_INTERNAL_FAILURE,
                 'frame': frm,
-                'error': 'frame #%d: %s: %s' % (
-                    idx,
-                    e.__class__.__name__,
-                    six.text_type(e),
-                )
+                'error': u'frame #%d: %s' % (idx, e),
             })
 
         for idx, frm in enumerate(backtrace):
