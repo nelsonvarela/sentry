@@ -11,8 +11,8 @@ class Migration(DataMigration):
         "Write your forwards methods here."
         qs = orm.Release.objects.all().select_related('project')
         for r in RangeQuerySetWrapperWithProgressBar(qs):
-            r.organization_id = r.project.organization_id
-            r.save()
+            orm.Release.objects.filter(id=r.id).update(organization=r.project.organization_id)
+
             try:
                 with transaction.atomic():
                     orm.ReleaseProject.objects.create(release=r, project=r.project)
@@ -21,10 +21,6 @@ class Migration(DataMigration):
 
     def backwards(self, orm):
         "Write your backwards methods here."
-        for r in orm.Release.objects.all():
-            r.organization = None
-            r.save()
-            orm.ReleaseProject.objects.get(release=r, project=r.project).delete()
 
 
     models = {
