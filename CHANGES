@@ -1,6 +1,8 @@
 Version 8.12 (Unreleased)
 -------------------------
 
+- Added configurable subject templates for individual alert emails (`mail:subject_template` option).
+
 SDKs
 ~~~~
 
